@@ -16,12 +16,10 @@ static ssize_t phys_access_proc_write(struct file *filp, const char __user *buff
 {
 	long phys_offset = *ppos;
 	void *virt = __va(phys_offset);
-	printk("*ppos = 0x%llx virt = 0x%llx, count = %d\n", *ppos, virt, count);
+	
 	if (virt == NULL)
 		return -EFAULT;
 
-	//if (count > 8)
-	//	return -EFAULT;
 	copy_from_user(virt, buffer, count);
 	*ppos += count;
 	return count;
@@ -33,22 +31,55 @@ static ssize_t phys_access_proc_read(struct file *filp, char __user *buffer,
 	long phys_offset = *ppos;
 	void *virt = __va(phys_offset);
 
-	printk("*ppos = 0x%llx virt = 0x%llx, count = %d\n", *ppos, virt, count);
 	if (virt == NULL)
 		return -EFAULT;
 
-	//if (count > 8)
-	//	return -EFAULT;
 	copy_to_user(buffer, virt, count);
 	*ppos += count;
 	return count;
 }
 
+static int phys_access_mmap(struct file *file, struct vm_area_struct *vma)
+{
+	size_t size = vma->vm_end - vma->vm_start;
+
+	if (remap_pfn_range(vma,
+			vma->vm_start,
+			vma->vm_pgoff,
+			size,
+			vma->vm_page_prot)) {
+		return -EAGAIN;
+	}
+	return 0;	
+}
+
+static loff_t phys_access_lseek(struct file *file, loff_t offset, int orig)
+{
+	loff_t ret;
+	inode_lock(file_inode(file));
+	switch (orig) {
+	case SEEK_CUR:
+		offset += file->f_pos;
+		file->f_pos = offset;
+		ret = offset;
+		break;
+	case SEEK_SET:
+		file->f_pos = offset;
+		ret = file->f_pos;
+		break;
+	default:
+		ret = -EINVAL;
+	}
+	inode_unlock(file_inode(file));
+	return ret;
+}
 
 static const struct file_operations phys_access_fops = {
 	.open = phys_access_proc_open,
 	.read = phys_access_proc_read,
 	.write = phys_access_proc_write,
+	.mmap = phys_access_mmap,
+	.llseek = phys_access_lseek,
 };
 
 
